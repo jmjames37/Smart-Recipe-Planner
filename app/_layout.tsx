@@ -1,7 +1,16 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useRecipeStore } from '../store/recipeStore';
 
 export default function RootLayout() {
+  const loadSavedRecipes = useRecipeStore((s) => s.loadSavedRecipes);
+
+  // Hydrate saved recipes from AsyncStorage once on app launch.
+  useEffect(() => {
+    loadSavedRecipes();
+  }, []);
+
   return (
     <>
       <StatusBar style="dark" />
@@ -14,23 +23,16 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: '#FAFAF8' },
         }}
       >
-        <Stack.Screen
-          name="index"
-          options={{ headerShown: false }}
-        />
+        {/* Tab group — header is managed by each tab screen */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* Stack screens pushed over the tab bar */}
         <Stack.Screen
           name="recipes"
-          options={{
-            title: 'Recipe Suggestions',
-            headerBackTitle: 'Camera',
-          }}
+          options={{ title: 'Recipe Suggestions', headerBackTitle: 'Camera' }}
         />
         <Stack.Screen
           name="recipe/[id]"
-          options={{
-            title: 'Recipe',
-            headerBackTitle: 'Recipes',
-          }}
+          options={{ title: 'Recipe', headerBackTitle: 'Recipes' }}
         />
       </Stack>
     </>

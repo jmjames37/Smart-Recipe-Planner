@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useRecipeStore } from '../../store/recipeStore';
 import { generateRecipeDetail } from '../../services/claude';
 
@@ -29,6 +30,9 @@ export default function RecipeDetailScreen() {
   const macroPreference = useRecipeStore((s) => s.macroPreference);
   const excludedAllergens = useRecipeStore((s) => s.excludedAllergens);
   const setRecipeDetail = useRecipeStore((s) => s.setRecipeDetail);
+  const saveRecipe   = useRecipeStore((s) => s.saveRecipe);
+  const unsaveRecipe = useRecipeStore((s) => s.unsaveRecipe);
+  const isSaved = useRecipeStore((s) => s.isRecipeSaved(id ?? ''));
 
   const hasDetail = !!recipe?.steps;
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -92,8 +96,36 @@ export default function RecipeDetailScreen() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  const toggleSave = () => {
+    if (!recipe) return;
+    if (isSaved) {
+      unsaveRecipe(recipe.id);
+    } else {
+      // Save whatever we have now (summary + any detail already streamed in).
+      saveRecipe(recipe);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      {/* Inject the bookmark button into the Stack header at render time. */}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={toggleSave}
+              style={styles.bookmarkBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name={isSaved ? 'bookmark' : 'bookmark-outline'}
+                size={24}
+                color="#2D6A4F"
+              />
+            </TouchableOpacity>
+          ),
+        }}
+      />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -236,6 +268,12 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+  },
+
+  // Header bookmark button
+  bookmarkBtn: {
+    marginRight: 4,
+    padding: 4,
   },
 
   // Not found
