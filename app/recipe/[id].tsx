@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useRecipeStore } from '../../store/recipeStore';
+import { generateRecipeDetail } from '../../services/claude';
 
 const DIFFICULTY: Record<string, { bg: string; text: string }> = {
   Easy:   { bg: '#DCFCE7', text: '#166534' },
@@ -15,9 +18,59 @@ const DIFFICULTY: Record<string, { bg: string; text: string }> = {
   Hard:   { bg: '#FEE2E2', text: '#991B1B' },
 };
 
+// Rough character length of a typical detail response, used to advance the
+// progress bar as tokens stream. It deliberately never reaches 100% until done.
+const PROGRESS_TARGET = 800;
+
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const recipe = useRecipeStore((s) => s.getRecipeById(id));
+  const detectedIngredients = useRecipeStore((s) => s.detectedIngredients);
+  const macroPreference = useRecipeStore((s) => s.macroPreference);
+  const excludedAllergens = useRecipeStore((s) => s.excludedAllergens);
+  const setRecipeDetail = useRecipeStore((s) => s.setRecipeDetail);
+
+  const hasDetail = !!recipe?.steps;
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [progress, setProgress] = useState(0);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  // Lazily generate the full ingredients + steps the first time this recipe is
+  // opened (phase 2). The hero and stats already render from the summary.
+  useEffect(() => {
+    if (!recipe || hasDetail) return;
+
+    let cancelled = false;
+    setStatus('loading');
+    setProgress(0);
+    setErrorMsg('');
+
+    generateRecipeDetail(
+      recipe,
+      detectedIngredients,
+      macroPreference,
+      excludedAllergens,
+      (chars) => {
+        if (!cancelled) setProgress(chars);
+      }
+    )
+      .then((detail) => {
+        if (cancelled) return;
+        setRecipeDetail(recipe.id, detail);
+        setStatus('idle');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setErrorMsg(err instanceof Error ? err.message : 'Could not load recipe.');
+        setStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipe?.id, hasDetail, attempt]);
 
   // ─── Not found ────────────────────────────────────────────────────────────
 
@@ -86,50 +139,84 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
 
-        {/* ── Ingredients ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>🛒</Text>
-            <Text style={styles.sectionTitle}>Ingredients</Text>
-            <View style={styles.countPill}>
-              <Text style={styles.countPillText}>{recipe.ingredients.length}</Text>
-            </View>
-          </View>
-
-          {recipe.ingredients.map((ing, i) => (
-            <View
-              key={i}
-              style={[
-                styles.ingredientRow,
-                i === recipe.ingredients.length - 1 && styles.ingredientRowLast,
-              ]}
+        {/* ── Detail: loading / error / loaded ── */}
+        {status === 'error' ? (
+          <View style={styles.section}>
+            <Text style={styles.detailErrorTitle}>Couldn’t write this recipe</Text>
+            <Text style={styles.detailErrorText}>{errorMsg}</Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => setAttempt((a) => a + 1)}
             >
-              <View style={styles.ingredientDot} />
-              <Text style={styles.ingredientAmount}>{ing.amount}</Text>
-              <Text style={styles.ingredientName}>{ing.name}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* ── Instructions ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>📋</Text>
-            <Text style={styles.sectionTitle}>Instructions</Text>
-            <View style={styles.countPill}>
-              <Text style={styles.countPillText}>{recipe.steps.length}</Text>
+              <Text style={styles.retryLabel}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : !hasDetail ? (
+          <View style={styles.section}>
+            <ActivityIndicator size="large" color="#2D6A4F" />
+            <Text style={styles.generatingTitle}>Writing the full recipe…</Text>
+            <Text style={styles.generatingSubtitle}>
+              Measuring ingredients and detailing each step
+            </Text>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${Math.min(progress / PROGRESS_TARGET, 0.95) * 100}%`,
+                  },
+                ]}
+              />
             </View>
           </View>
-
-          {recipe.steps.map((step, i) => (
-            <View key={i} style={styles.stepRow}>
-              <View style={styles.stepBadge}>
-                <Text style={styles.stepNumber}>{i + 1}</Text>
+        ) : (
+          <>
+            {/* ── Ingredients ── */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>🛒</Text>
+                <Text style={styles.sectionTitle}>Ingredients</Text>
+                <View style={styles.countPill}>
+                  <Text style={styles.countPillText}>{recipe.ingredients!.length}</Text>
+                </View>
               </View>
-              <Text style={styles.stepText}>{step}</Text>
+
+              {recipe.ingredients!.map((ing, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.ingredientRow,
+                    i === recipe.ingredients!.length - 1 && styles.ingredientRowLast,
+                  ]}
+                >
+                  <View style={styles.ingredientDot} />
+                  <Text style={styles.ingredientAmount}>{ing.amount}</Text>
+                  <Text style={styles.ingredientName}>{ing.name}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+
+            {/* ── Instructions ── */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>📋</Text>
+                <Text style={styles.sectionTitle}>Instructions</Text>
+                <View style={styles.countPill}>
+                  <Text style={styles.countPillText}>{recipe.steps!.length}</Text>
+                </View>
+              </View>
+
+              {recipe.steps!.map((step, i) => (
+                <View key={i} style={styles.stepRow}>
+                  <View style={styles.stepBadge}>
+                    <Text style={styles.stepNumber}>{i + 1}</Text>
+                  </View>
+                  <Text style={styles.stepText}>{step}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -317,6 +404,58 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1A2E21',
     textTransform: 'capitalize',
+  },
+
+  // Detail loading
+  generatingTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A2E21',
+    textAlign: 'center',
+    marginTop: 14,
+  },
+  generatingSubtitle: {
+    fontSize: 14,
+    color: '#6B8C77',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EDF3EF',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#2D6A4F',
+  },
+
+  // Detail error
+  detailErrorTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A2E21',
+    marginBottom: 6,
+  },
+  detailErrorText: {
+    fontSize: 14,
+    color: '#6B8C77',
+    lineHeight: 21,
+    marginBottom: 16,
+  },
+  retryBtn: {
+    backgroundColor: '#2D6A4F',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  retryLabel: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   // Steps

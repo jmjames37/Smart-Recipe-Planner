@@ -13,12 +13,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useRecipeStore } from '../store/recipeStore';
-import { generateRecipes } from '../services/claude';
+import { generateRecipeList } from '../services/claude';
+import MacroSelector from '../components/MacroSelector';
+import AllergenSelector from '../components/AllergenSelector';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { setImageUri, setResults, setLoading, setError, isLoading, reset } =
-    useRecipeStore();
+  const {
+    setImageUri,
+    setResults,
+    setLoading,
+    setError,
+    isLoading,
+    reset,
+    macroPreference,
+    setMacroPreference,
+    excludedAllergens,
+    toggleAllergen,
+  } = useRecipeStore();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
 
   // ─── Permission helpers ───────────────────────────────────────────────────
@@ -54,7 +66,7 @@ export default function HomeScreen() {
   const handleTakePhoto = async () => {
     if (!(await requestCamera())) return;
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.9,
       allowsEditing: false,
     });
@@ -64,7 +76,7 @@ export default function HomeScreen() {
   const handlePickFromGallery = async () => {
     if (!(await requestLibrary())) return;
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.9,
       allowsEditing: false,
     });
@@ -81,7 +93,12 @@ export default function HomeScreen() {
     setImageUri(capturedUri);
 
     try {
-      const result = await generateRecipes(capturedUri);
+      const result = await generateRecipeList(
+        capturedUri,
+        [],
+        macroPreference,
+        excludedAllergens
+      );
       setResults(result.detectedIngredients, result.recipes);
       router.push('/recipes');
     } catch (err) {
@@ -127,7 +144,12 @@ export default function HomeScreen() {
         </View>
       ) : (
         /* ── Photo preview screen ── */
-        <View style={styles.previewScreen}>
+        <ScrollView
+          style={styles.previewScroll}
+          contentContainerStyle={styles.previewScreen}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={styles.previewHeading}>Your Ingredients</Text>
 
           <View style={styles.imageFrame}>
@@ -142,6 +164,14 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.previewActions}>
+              <MacroSelector
+                value={macroPreference}
+                onChange={setMacroPreference}
+              />
+              <AllergenSelector
+                excluded={excludedAllergens}
+                onToggle={toggleAllergen}
+              />
               <TouchableOpacity style={styles.primaryBtn} onPress={handleAnalyze}>
                 <Text style={styles.primaryBtnLabel}>Find Recipes</Text>
               </TouchableOpacity>
@@ -153,7 +183,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -217,8 +247,11 @@ const styles = StyleSheet.create({
   },
 
   // Preview
-  previewScreen: {
+  previewScroll: {
     flex: 1,
+  },
+  previewScreen: {
+    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 40,
@@ -231,10 +264,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   imageFrame: {
-    flex: 1,
+    height: 240,
     borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: 24,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,

@@ -6,7 +6,9 @@
     "orientation": "portrait",
     "scheme": "smart-recipe-planner",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.smartrecipeplanner.app",
@@ -20,7 +22,11 @@
       "adaptiveIcon": {
         "backgroundColor": "#2D6A4F"
       },
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -30,7 +36,8 @@
           "photosPermission": "Allow Smart Recipe Planner to access your photos to select ingredient images.",
           "cameraPermission": "Allow Smart Recipe Planner to use your camera to photograph ingredients."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

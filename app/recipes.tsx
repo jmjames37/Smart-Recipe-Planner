@@ -11,8 +11,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useRecipeStore } from '../store/recipeStore';
-import { generateRecipes } from '../services/claude';
+import { generateRecipeList } from '../services/claude';
 import RecipeCard from '../components/RecipeCard';
+import MacroSelector from '../components/MacroSelector';
+import { MacroPreference } from '../types';
 
 export default function RecipesScreen() {
   const router = useRouter();
@@ -21,8 +23,12 @@ export default function RecipesScreen() {
     detectedIngredients,
     currentRecipes,
     allShownTitles,
+    macroPreference,
+    excludedAllergens,
     isLoading,
     setResults,
+    replaceResults,
+    setMacroPreference,
     setLoading,
     setError,
   } = useRecipeStore();
@@ -35,12 +41,46 @@ export default function RecipesScreen() {
     setError(null);
 
     try {
-      const result = await generateRecipes(imageUri, allShownTitles);
+      const result = await generateRecipeList(
+        imageUri,
+        allShownTitles,
+        macroPreference,
+        excludedAllergens
+      );
       setResults(result.detectedIngredients, result.recipes);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong.';
       setError(message);
       Alert.alert('Could Not Refresh', message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Macro focus change ───────────────────────────────────────────────────
+  // Switching focus regenerates a fresh batch for that macro (no exclusions),
+  // so results aren't constrained by titles shown under the previous focus.
+
+  const handleMacroChange = async (next: MacroPreference) => {
+    if (next === macroPreference || isLoading) return;
+    setMacroPreference(next);
+    if (!imageUri) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await generateRecipeList(
+        imageUri,
+        [],
+        next,
+        excludedAllergens
+      );
+      replaceResults(result.detectedIngredients, result.recipes);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Something went wrong.';
+      setError(message);
+      Alert.alert('Could Not Update Recipes', message);
     } finally {
       setLoading(false);
     }
@@ -74,6 +114,15 @@ export default function RecipesScreen() {
             </ScrollView>
           </View>
         )}
+
+        {/* ── Macro focus ── */}
+        <View style={styles.macroSection}>
+          <MacroSelector
+            value={macroPreference}
+            onChange={handleMacroChange}
+            disabled={isLoading}
+          />
+        </View>
 
         {/* ── List header ── */}
         <View style={styles.listHeader}>
@@ -164,6 +213,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     textTransform: 'capitalize',
+  },
+
+  // Macro focus
+  macroSection: {
+    marginBottom: 20,
   },
 
   // List header
