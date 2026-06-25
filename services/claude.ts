@@ -14,6 +14,17 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 // claude-sonnet-4-6 supports vision and strikes the right balance of quality and speed
 const MODEL = 'claude-sonnet-4-6';
 
+// Thrown when the photo contains no recognizable food/ingredients, so the UI
+// can prompt the user to submit a different image instead of showing recipes.
+export class NoFoodDetectedError extends Error {
+  constructor(
+    message = 'No food or ingredients were detected in the photo. Please retake or choose a clearer photo of your ingredients.'
+  ) {
+    super(message);
+    this.name = 'NoFoodDetectedError';
+  }
+}
+
 function getApiKey(): string {
   const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -111,7 +122,9 @@ export async function generateRecipeList(
 
   const systemPrompt = `You are a professional chef. Analyze ingredient photos and return recipe suggestions as valid JSON only — no markdown code fences, no commentary, just the raw JSON object.`;
 
-  const userPrompt = `Analyze this photo and identify all visible ingredients. Then suggest exactly 5 recipes that can realistically be made with those ingredients (you may assume common pantry staples like salt, pepper, oil, butter, flour, sugar, and basic spices are available).${exclusionClause}${macroClause(macroPreference)}
+  const userPrompt = `Analyze this photo and identify all visible food ingredients. Then suggest exactly 5 recipes that can realistically be made with those ingredients (you may assume common pantry staples like salt, pepper, oil, butter, flour, sugar, and basic spices are available).
+
+If the photo does NOT contain any food or edible ingredients (e.g. it shows people, scenery, objects, text, or is too blurry to identify any food), return exactly {"detectedIngredients": [], "recipes": []} and nothing else. Do NOT invent ingredients or recipes.${exclusionClause}${macroClause(macroPreference)}
 
 ${allergenClause(excludedAllergens)}
 
@@ -172,6 +185,14 @@ Rules:
   const data = await response.json();
   const rawText: string = data.content[0].text;
   const parsed = extractJson<RecipeListResponse>(rawText);
+
+  // No recognizable food in the photo — ask the user for a different image.
+  if (
+    !parsed.detectedIngredients?.length ||
+    !parsed.recipes?.length
+  ) {
+    throw new NoFoodDetectedError();
+  }
 
   // Stamp unique IDs so navigation lookups are reliable
   parsed.recipes = parsed.recipes.map((recipe, index) => ({

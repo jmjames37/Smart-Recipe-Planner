@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useRecipeStore } from '../store/recipeStore';
-import { generateRecipeList } from '../services/claude';
+import { generateRecipeList, NoFoodDetectedError } from '../services/claude';
 import MacroSelector from '../components/MacroSelector';
 import AllergenSelector from '../components/AllergenSelector';
 
@@ -104,7 +104,14 @@ export default function HomeScreen() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong.';
       setError(message);
-      Alert.alert('Could Not Analyze Photo', message);
+
+      if (err instanceof NoFoodDetectedError) {
+        // Send the user back to the capture screen to submit a different photo.
+        setCapturedUri(null);
+        Alert.alert('No Ingredients Found', message, [{ text: 'Try Another Photo' }]);
+      } else {
+        Alert.alert('Could Not Analyze Photo', message);
+      }
     } finally {
       setLoading(false);
     }

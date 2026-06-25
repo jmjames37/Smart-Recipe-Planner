@@ -20,6 +20,15 @@ A React Native / Expo mobile app that analyses a photo of your ingredients using
 | AI | Anthropic Claude (`claude-sonnet-4-6`) via REST |
 | Image handling | expo-image-picker + expo-image-manipulator |
 
+## Prerequisites
+
+Before you start, make sure you have:
+
+- **Node.js 18+** — check with `node -v`, install from [nodejs.org](https://nodejs.org) if needed
+- **npm** — bundled with Node
+- **Expo Go** — install the free app on your iOS or Android device from the App Store / Google Play
+- **Anthropic API key** — get one at [console.anthropic.com](https://console.anthropic.com)
+
 ## Getting started
 
 ### 1. Clone and install
@@ -36,27 +45,35 @@ npm install
 cp .env.example .env
 ```
 
-Open `.env` and replace the placeholder with your Anthropic API key:
+Open `.env` in any text editor and replace the placeholder:
 
 ```
-EXPO_PUBLIC_ANTHROPIC_API_KEY=sk-ant-...
+EXPO_PUBLIC_ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-Get a key at [console.anthropic.com](https://console.anthropic.com).
-
-### 3. Run
+### 3. Start the dev server
 
 ```bash
-# Start the Expo dev server
 npx expo start
-
-# Open on a physical device using the Expo Go app (scan the QR code)
-# or on a simulator:
-npx expo start --ios
-npx expo start --android
 ```
 
-> **Note:** Camera access requires a physical device. The gallery picker works on simulators.
+You'll see a QR code in the terminal.
+
+### 4. Open on your device
+
+- **iPhone** — open the Camera app, scan the QR code, tap the Expo Go banner
+- **Android** — open the Expo Go app, tap "Scan QR code", scan the code
+
+The app will load on your device. Any code changes you save will reload automatically.
+
+### Running on a simulator (optional)
+
+```bash
+npx expo start --ios       # Requires Xcode (Mac only)
+npx expo start --android   # Requires Android Studio
+```
+
+> **Note:** The camera only works on a physical device. The photo gallery picker works on simulators.
 
 ## Project structure
 
