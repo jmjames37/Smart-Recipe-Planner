@@ -79,12 +79,25 @@ export const useRecipeStore = create<RecipeState & RecipeActions>((set, get) => 
     }),
 
   // Merge phase-2 ingredients/steps into the matching summary in place.
-  setRecipeDetail: (id, detail) =>
-    set((state) => ({
-      currentRecipes: state.currentRecipes.map((r) =>
+  // Also updates the savedRecipes copy so bookmarked recipes always get
+  // the full detail cached — no need for the user to re-save.
+  setRecipeDetail: (id, detail) => {
+    set((state) => {
+      const updatedSaved = state.savedRecipes.map((r) =>
         r.id === id ? { ...r, ...detail } : r
-      ),
-    })),
+      );
+      // Persist if this recipe is saved (fire-and-forget, non-blocking).
+      if (updatedSaved.some((r) => r.id === id)) {
+        AsyncStorage.setItem(SAVED_KEY, JSON.stringify(updatedSaved)).catch(() => {});
+      }
+      return {
+        currentRecipes: state.currentRecipes.map((r) =>
+          r.id === id ? { ...r, ...detail } : r
+        ),
+        savedRecipes: updatedSaved,
+      };
+    });
+  },
 
   setMacroPreference: (macroPreference) => set({ macroPreference }),
 

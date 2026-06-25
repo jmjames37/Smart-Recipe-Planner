@@ -24,15 +24,24 @@ const DIFFICULTY: Record<string, { bg: string; text: string }> = {
 const PROGRESS_TARGET = 800;
 
 export default function RecipeDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const recipe = useRecipeStore((s) => s.getRecipeById(id));
+  // Expo Router can return string | string[] — normalize to a plain string.
+  const { id: rawId } = useLocalSearchParams<{ id: string }>();
+  const id = Array.isArray(rawId) ? rawId[0] : (rawId ?? '');
+
+  // Use direct state access in selectors — do NOT call action methods (which
+  // call get() internally) because that pattern can miss Zustand reactivity.
+  const recipe = useRecipeStore((s) =>
+    s.currentRecipes.find((r) => r.id === id) ??
+    s.savedRecipes.find((r) => r.id === id)
+  );
+  const isSaved = useRecipeStore((s) => s.savedRecipes.some((r) => r.id === id));
+
   const detectedIngredients = useRecipeStore((s) => s.detectedIngredients);
   const macroPreference = useRecipeStore((s) => s.macroPreference);
   const excludedAllergens = useRecipeStore((s) => s.excludedAllergens);
   const setRecipeDetail = useRecipeStore((s) => s.setRecipeDetail);
   const saveRecipe   = useRecipeStore((s) => s.saveRecipe);
   const unsaveRecipe = useRecipeStore((s) => s.unsaveRecipe);
-  const isSaved = useRecipeStore((s) => s.isRecipeSaved(id ?? ''));
 
   const hasDetail = !!recipe?.steps;
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');

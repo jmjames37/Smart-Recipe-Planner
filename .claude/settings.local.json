@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(npx expo *)",
+      "Bash(npx expo-doctor *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(grep -vE \"^\\\\s*\\\\*|sourceMappingURL|^\\\\s*/\\\\*\\\\*?$|^\\\\s*\\\\*/\")",
+      "Bash(echo \"=== tsc exit: $? ===\")"
+    ]
+  }
+}
