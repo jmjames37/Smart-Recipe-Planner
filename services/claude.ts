@@ -41,6 +41,79 @@ const COMMON_HEADERS = (apiKey: string) => ({
   'anthropic-version': '2023-06-01',
 });
 
+// ─── Resilient request layer ────────────────────────────────────────────────
+
+const REQUEST_TIMEOUT_MS = 30000;
+const MAX_RETRIES = 3;
+
+// The subset of the Response API we rely on — satisfied by both global fetch
+// and expo/fetch responses.
+interface FetchResponseLike {
+  ok: boolean;
+  status: number;
+  headers: { get(name: string): string | null };
+  json(): Promise<any>;
+  text(): Promise<string>;
+  body?: ReadableStream<Uint8Array> | null;
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// 429 (rate limit) and 5xx / 529 (overloaded, server errors) are transient.
+// Other 4xx are caller errors and must not be retried.
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+// Honor a Retry-After header (seconds) when present; otherwise exponential
+// backoff with jitter (~0.5s, 1s, 2s).
+function retryDelayMs(res: FetchResponseLike | null, attempt: number): number {
+  const header = res?.headers.get('retry-after');
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  }
+  return 500 * 2 ** attempt + Math.floor(Math.random() * 250);
+}
+
+// Issue a request with a timeout and automatic retries on transient failures
+// (429, 5xx, network errors / timeouts). The AbortController bounds reaching the
+// response headers — it is cleared as soon as they arrive, so a streamed body
+// read is NOT cut short. Returns the response once headers arrive (which may
+// still carry a non-retryable error status for the caller to handle).
+async function requestWithRetry(
+  makeRequest: (signal: AbortSignal) => Promise<FetchResponseLike>
+): Promise<FetchResponseLike> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await makeRequest(controller.signal);
+      clearTimeout(timer);
+
+      if (isRetryableStatus(res.status) && attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(res, attempt));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      clearTimeout(timer);
+      if (attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(null, attempt));
+        continue;
+      }
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      throw new Error(
+        isTimeout
+          ? 'The request timed out. Check your connection and try again.'
+          : 'Network error. Check your connection and try again.'
+      );
+    }
+  }
+  // The loop always returns or throws; this satisfies the type checker.
+  throw new Error('Request failed after multiple attempts.');
+}
+
 // A short instruction nudging the macro split of generated recipes. Balanced
 // returns an empty string so behavior is unchanged when no focus is chosen.
 function macroClause(pref: MacroPreference): string {
@@ -150,31 +223,34 @@ Rules:
 - tags should be 2–4 concise descriptors (e.g. "quick", "gluten-free", "one-pan", "spicy")
 - Return exactly 5 recipes`;
 
-  const response = await fetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: COMMON_HEADERS(apiKey),
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/jpeg',
-                data: base64Image,
+  const response = await requestWithRetry((signal) =>
+    fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: COMMON_HEADERS(apiKey),
+      signal,
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: base64Image,
+                },
               },
-            },
-            { type: 'text', text: userPrompt },
-          ],
-        },
-      ],
-    }),
-  });
+              { type: 'text', text: userPrompt },
+            ],
+          },
+        ],
+      }),
+    })
+  );
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
@@ -242,17 +318,20 @@ Rules:
 - ingredients must be complete with precise amounts
 - steps must be detailed, actionable full sentences (4–6 steps)`;
 
-  const response = await expoFetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: COMMON_HEADERS(apiKey),
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1536,
-      stream: true,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
-  });
+  const response = await requestWithRetry((signal) =>
+    expoFetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: COMMON_HEADERS(apiKey),
+      signal,
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 1536,
+        stream: true,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+  );
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
@@ -277,7 +356,7 @@ Rules:
 // Read an Anthropic SSE stream, accumulate the text deltas, and report progress
 // as bytes arrive. Falls back to a buffered read if the body isn't streamable.
 async function readSseText(
-  response: Awaited<ReturnType<typeof expoFetch>>,
+  response: FetchResponseLike,
   onProgress?: (charCount: number) => void
 ): Promise<string> {
   const reader = response.body?.getReader();
