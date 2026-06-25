@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Smart Recipe Planner",
+    "slug": "smart-recipe-planner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "smart-recipe-planner",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smartrecipeplanner.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "We use your camera to photograph ingredients for recipe suggestions.",
+        "NSPhotoLibraryUsageDescription": "We access your photo library so you can select an ingredient photo."
+      }
+    },
+    "android": {
+      "package": "com.smartrecipeplanner.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#2D6A4F"
+      },
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Smart Recipe Planner to access your photos to select ingredient images.",
+          "cameraPermission": "Allow Smart Recipe Planner to use your camera to photograph ingredients."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
