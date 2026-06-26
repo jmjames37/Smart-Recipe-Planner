@@ -9,16 +9,22 @@ A React Native / Expo mobile app that analyses a photo of your ingredients using
 - **5 structured recipes** — title, description, difficulty, prep/cook time, servings, full ingredient list, step-by-step instructions
 - **Endless refresh** — tap "Try Different Recipes" to get 5 new suggestions; previously shown recipes are excluded automatically
 - **Recipe detail screen** — clean, readable layout with numbered steps and measured ingredients
+- **Saved recipes** — bookmark any recipe and find it later under the **Saved** tab; saves persist across app launches (stored on-device with AsyncStorage)
+- **Macro focus** — bias suggestions toward Balanced, High Protein, High Carb, or High Fat
+- **Allergen filters** — exclude any of the 9 major allergens; recipes (and their detailed steps) avoid them and their common derived forms
+- **Fast, streamed detail** — the list loads quickly from lightweight summaries, and full ingredients/steps stream in on demand when you open a recipe
 
 ## Tech stack
 
 | Layer | Choice |
 |-------|--------|
-| Framework | Expo (SDK 51) + Expo Router |
+| Framework | Expo (SDK 54) + Expo Router (tab + stack navigation) |
 | Language | TypeScript |
 | State | Zustand |
-| AI | Anthropic Claude (`claude-sonnet-4-6`) via REST |
+| AI | Anthropic Claude (`claude-sonnet-4-6`) via REST + streaming (`expo/fetch`) |
 | Image handling | expo-image-picker + expo-image-manipulator |
+| Persistence | `@react-native-async-storage/async-storage` (saved recipes) |
+| Web | react-native-web + react-dom (for `expo export -p web`) |
 
 ## Prerequisites
 
@@ -79,19 +85,28 @@ npx expo start --android   # Requires Android Studio
 
 ```
 app/
-  _layout.tsx          Stack navigator root
-  index.tsx            Camera / home screen
-  recipes.tsx          Recipe list screen
-  recipe/[id].tsx      Recipe detail screen
+  _layout.tsx          Root stack; hydrates saved recipes on launch
+  index.tsx            Redirects "/" to the tab navigator
+  (tabs)/
+    _layout.tsx        Tab bar (Discover / Saved)
+    home.tsx           Camera / capture + macro + allergen options
+    saved.tsx          Saved recipes list
+  recipes.tsx          Recipe list (summaries) screen
+  recipe/[id].tsx      Recipe detail screen (streams full recipe; save toggle)
 
 components/
   RecipeCard.tsx       Tappable recipe summary card
+  MacroSelector.tsx    Balanced / Protein / Carb / Fat selector
+  AllergenSelector.tsx Multi-select allergen exclusions
+
+constants/
+  allergens.ts         Allergen labels + derived-form hints
 
 services/
-  claude.ts            Anthropic API integration (vision + JSON recipe generation)
+  claude.ts            Anthropic API (vision list + streamed detail), retry/timeout
 
 store/
-  recipeStore.ts       Zustand global state
+  recipeStore.ts       Zustand global state + AsyncStorage-backed saved recipes
 
 types/
   index.ts             TypeScript interfaces
@@ -104,6 +119,30 @@ types/
 | `EXPO_PUBLIC_ANTHROPIC_API_KEY` | Your Anthropic API key |
 
 Variables prefixed with `EXPO_PUBLIC_` are bundled into the client build. Do **not** commit your `.env` file.
+
+## Deploying to web (Netlify)
+
+The app also exports as a static web build.
+
+```bash
+npx expo export -p web   # outputs to ./dist
+```
+
+Netlify settings:
+
+| Setting | Value |
+|---------|-------|
+| Build command | `expo export -p web` |
+| Publish directory | `dist` |
+| Environment | set `EXPO_PUBLIC_ANTHROPIC_API_KEY` in **Site settings → Environment variables** |
+
+The web build requires `react-dom` and `react-native-web` (already in `package.json`),
+so a clean `npm install` on the build server pulls them in automatically.
+
+> ⚠️ The Anthropic API key is bundled into the **client** for both the mobile and
+> web builds, so on a public web deploy it is visible to anyone. For production,
+> proxy the Anthropic calls through a backend you control rather than shipping the
+> key. (Camera/photo capture is also limited on web compared to the native app.)
 
 ## License
 
