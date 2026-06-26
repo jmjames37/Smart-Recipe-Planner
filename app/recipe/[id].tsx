@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useRecipeStore } from '../../store/recipeStore';
 import { generateRecipeDetail } from '../../services/claude';
@@ -105,36 +105,16 @@ export default function RecipeDetailScreen() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  const toggleSave = () => {
-    if (!recipe) return;
+  const handleSaveToggle = () => {
     if (isSaved) {
       unsaveRecipe(recipe.id);
     } else {
-      // Save whatever we have now (summary + any detail already streamed in).
       saveRecipe(recipe);
     }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Inject the bookmark button into the Stack header at render time. */}
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={toggleSave}
-              style={styles.bookmarkBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons
-                name={isSaved ? 'bookmark' : 'bookmark-outline'}
-                size={24}
-                color="#2D6A4F"
-              />
-            </TouchableOpacity>
-          ),
-        }}
-      />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -142,7 +122,21 @@ export default function RecipeDetailScreen() {
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <Text style={styles.recipeTitle}>{recipe.title}</Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.recipeTitle, { flex: 1 }]}>{recipe.title}</Text>
+            {/* Save button lives in the body — avoids React Navigation header stale-closure issues */}
+            <TouchableOpacity
+              style={[styles.saveBtn, isSaved && styles.saveBtnActive]}
+              onPress={handleSaveToggle}
+              activeOpacity={0.75}
+            >
+              <Ionicons
+                name={isSaved ? 'bookmark' : 'bookmark-outline'}
+                size={22}
+                color={isSaved ? '#FFFFFF' : '#2D6A4F'}
+              />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.recipeDescription}>{recipe.description}</Text>
 
           <View style={styles.badgeRow}>
@@ -279,12 +273,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 
-  // Header bookmark button
-  bookmarkBtn: {
-    marginRight: 4,
-    padding: 4,
-  },
-
   // Not found
   notFound: {
     flex: 1,
@@ -302,11 +290,29 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 20,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
   recipeTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     color: '#1A2E21',
-    lineHeight: 34,
+    lineHeight: 32,
+  },
+  saveBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E8F5E9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: 2,
+  },
+  saveBtnActive: {
+    backgroundColor: '#2D6A4F',
   },
   recipeDescription: {
     fontSize: 15,

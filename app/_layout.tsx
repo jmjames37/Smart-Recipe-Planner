@@ -7,9 +7,10 @@ export default function RootLayout() {
   const loadSavedRecipes = useRecipeStore((s) => s.loadSavedRecipes);
 
   // Hydrate saved recipes from AsyncStorage once on app launch.
+  // (Zustand action identity is stable, so this runs only once.)
   useEffect(() => {
     loadSavedRecipes();
-  }, []);
+  }, [loadSavedRecipes]);
 
   return (
     <>
