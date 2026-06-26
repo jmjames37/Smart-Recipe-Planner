@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Allergen,
   MacroPreference,
@@ -7,6 +8,8 @@ import {
   RecipeSummary,
 } from '../types';
 
+const SAVED_KEY = '@smart_recipe_planner:saved_recipes';
+
 interface RecipeState {
   imageUri: string | null;
   detectedIngredients: string[];
@@ -14,6 +17,7 @@ interface RecipeState {
   allShownTitles: string[];
   macroPreference: MacroPreference;
   excludedAllergens: Allergen[];
+  savedRecipes: Recipe[];
   isLoading: boolean;
   error: string | null;
 }
@@ -27,7 +31,13 @@ interface RecipeActions {
   toggleAllergen: (allergen: Allergen) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  // Checks current session AND saved recipes
   getRecipeById: (id: string) => Recipe | undefined;
+  // Saved recipes
+  loadSavedRecipes: () => Promise<void>;
+  saveRecipe: (recipe: Recipe) => Promise<void>;
+  unsaveRecipe: (id: string) => Promise<void>;
+  isRecipeSaved: (id: string) => boolean;
   reset: () => void;
 }
 
@@ -38,6 +48,7 @@ const initialState: RecipeState = {
   allShownTitles: [],
   macroPreference: 'balanced',
   excludedAllergens: [],
+  savedRecipes: [],
   isLoading: false,
   error: null,
 };
@@ -68,12 +79,25 @@ export const useRecipeStore = create<RecipeState & RecipeActions>((set, get) => 
     }),
 
   // Merge phase-2 ingredients/steps into the matching summary in place.
-  setRecipeDetail: (id, detail) =>
-    set((state) => ({
-      currentRecipes: state.currentRecipes.map((r) =>
+  // Also updates the savedRecipes copy so bookmarked recipes always get
+  // the full detail cached — no need for the user to re-save.
+  setRecipeDetail: (id, detail) => {
+    set((state) => {
+      const updatedSaved = state.savedRecipes.map((r) =>
         r.id === id ? { ...r, ...detail } : r
-      ),
-    })),
+      );
+      // Persist if this recipe is saved (fire-and-forget, non-blocking).
+      if (updatedSaved.some((r) => r.id === id)) {
+        AsyncStorage.setItem(SAVED_KEY, JSON.stringify(updatedSaved)).catch(() => {});
+      }
+      return {
+        currentRecipes: state.currentRecipes.map((r) =>
+          r.id === id ? { ...r, ...detail } : r
+        ),
+        savedRecipes: updatedSaved,
+      };
+    });
+  },
 
   setMacroPreference: (macroPreference) => set({ macroPreference }),
 
@@ -88,14 +112,58 @@ export const useRecipeStore = create<RecipeState & RecipeActions>((set, get) => 
 
   setError: (error) => set({ error }),
 
-  getRecipeById: (id) => get().currentRecipes.find((r) => r.id === id),
+  // Check the active session first, then fall back to saved recipes so the
+  // detail screen works whether reached from the list or the saved tab.
+  getRecipeById: (id) => {
+    const { currentRecipes, savedRecipes } = get();
+    return (
+      currentRecipes.find((r) => r.id === id) ??
+      savedRecipes.find((r) => r.id === id)
+    );
+  },
 
-  // Clear session data but keep macroPreference and excludedAllergens — they're
-  // user settings, not per-photo state, so they survive starting a new photo.
+  // ─── Saved recipes (AsyncStorage-backed) ────────────────────────────────────
+
+  loadSavedRecipes: async () => {
+    try {
+      const raw = await AsyncStorage.getItem(SAVED_KEY);
+      if (raw) set({ savedRecipes: JSON.parse(raw) });
+    } catch {
+      // Non-fatal — start with an empty list if storage is unavailable.
+    }
+  },
+
+  saveRecipe: async (recipe) => {
+    const { savedRecipes } = get();
+    if (savedRecipes.some((r) => r.id === recipe.id)) return;
+    const updated = [recipe, ...savedRecipes];
+    set({ savedRecipes: updated });
+    try {
+      await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(updated));
+    } catch {
+      set({ savedRecipes }); // revert optimistic update
+    }
+  },
+
+  unsaveRecipe: async (id) => {
+    const { savedRecipes } = get();
+    const updated = savedRecipes.filter((r) => r.id !== id);
+    set({ savedRecipes: updated });
+    try {
+      await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(updated));
+    } catch {
+      set({ savedRecipes }); // revert on failure
+    }
+  },
+
+  isRecipeSaved: (id) => get().savedRecipes.some((r) => r.id === id),
+
+  // Clear session data but keep user settings and saved recipes across resets.
   reset: () =>
     set((state) => ({
       ...initialState,
       macroPreference: state.macroPreference,
       excludedAllergens: state.excludedAllergens,
+      savedRecipes: state.savedRecipes,
     })),
 }));
