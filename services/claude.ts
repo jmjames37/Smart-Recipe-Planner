@@ -1,4 +1,5 @@
 import { fetch as expoFetch } from 'expo/fetch';
+import { Platform } from 'react-native';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import {
   Allergen,
@@ -10,9 +11,17 @@ import {
 } from '../types';
 import { ALLERGENS } from '../constants/allergens';
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+// The app never calls Anthropic directly — it calls our own serverless proxy
+// (api/messages.ts), which holds the API key server-side. On the deployed web
+// build this is same-origin (relative path); on native, set EXPO_PUBLIC_PROXY_URL
+// to the deployed origin (e.g. https://your-app.vercel.app).
+const PROXY_BASE = process.env.EXPO_PUBLIC_PROXY_URL ?? '';
+const PROXY_URL = `${PROXY_BASE}/api/messages`;
+
 // claude-sonnet-4-6 supports vision and strikes the right balance of quality and speed
 const MODEL = 'claude-sonnet-4-6';
+
+const PROXY_HEADERS = { 'Content-Type': 'application/json' };
 
 // Thrown when the photo contains no recognizable food/ingredients, so the UI
 // can prompt the user to submit a different image instead of showing recipes.
@@ -24,22 +33,6 @@ export class NoFoodDetectedError extends Error {
     this.name = 'NoFoodDetectedError';
   }
 }
-
-function getApiKey(): string {
-  const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      'Anthropic API key not configured. Add EXPO_PUBLIC_ANTHROPIC_API_KEY to your .env file.'
-    );
-  }
-  return apiKey;
-}
-
-const COMMON_HEADERS = (apiKey: string) => ({
-  'Content-Type': 'application/json',
-  'x-api-key': apiKey,
-  'anthropic-version': '2023-06-01',
-});
 
 // ─── Resilient request layer ────────────────────────────────────────────────
 
@@ -56,6 +49,11 @@ interface FetchResponseLike {
   text(): Promise<string>;
   body?: ReadableStream<Uint8Array> | null;
 }
+
+// Streaming fetch: browsers' global fetch supports response-body streaming, but
+// React Native's global fetch does not — use expo/fetch on native.
+const streamFetch = (url: string, init: any): Promise<FetchResponseLike> =>
+  Platform.OS === 'web' ? (globalThis.fetch as any)(url, init) : expoFetch(url, init);
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -185,7 +183,6 @@ export async function generateRecipeList(
   macroPreference: MacroPreference = 'balanced',
   excludedAllergens: Allergen[] = []
 ): Promise<RecipeListResponse> {
-  const apiKey = getApiKey();
   const base64Image = await compressAndEncodeImage(imageUri);
 
   const exclusionClause =
@@ -224,9 +221,9 @@ Rules:
 - Return exactly 5 recipes`;
 
   const response = await requestWithRetry((signal) =>
-    fetch(ANTHROPIC_API_URL, {
+    fetch(PROXY_URL, {
       method: 'POST',
-      headers: COMMON_HEADERS(apiKey),
+      headers: PROXY_HEADERS,
       signal,
       body: JSON.stringify({
         model: MODEL,
@@ -290,8 +287,6 @@ export async function generateRecipeDetail(
   excludedAllergens: Allergen[] = [],
   onProgress?: (charCount: number) => void
 ): Promise<RecipeDetail> {
-  const apiKey = getApiKey();
-
   const systemPrompt = `You are a professional chef. Return recipe details as valid JSON only — no markdown code fences, no commentary, just the raw JSON object.`;
 
   const userPrompt = `Detected ingredients from the user's photo: ${detectedIngredients.join(', ')} (plus common pantry staples like salt, pepper, oil, butter, flour, sugar, and basic spices).
@@ -319,9 +314,9 @@ Rules:
 - steps must be detailed, actionable full sentences (4–6 steps)`;
 
   const response = await requestWithRetry((signal) =>
-    expoFetch(ANTHROPIC_API_URL, {
+    streamFetch(PROXY_URL, {
       method: 'POST',
-      headers: COMMON_HEADERS(apiKey),
+      headers: PROXY_HEADERS,
       signal,
       body: JSON.stringify({
         model: MODEL,
