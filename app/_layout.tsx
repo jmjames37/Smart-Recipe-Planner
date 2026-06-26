@@ -24,6 +24,8 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: '#FAFAF8' },
         }}
       >
+        {/* Entry redirect to the tab group — no header/flash on web */}
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         {/* Tab group — header is managed by each tab screen */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         {/* Stack screens pushed over the tab bar */}
